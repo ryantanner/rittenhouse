@@ -1,8 +1,9 @@
 package com.kn0de.redis
 
 import language.experimental.macros
-
 import reflect.macros.Context
+
+import java.util.UUID
 
 object RedisMacros  {
 
@@ -13,7 +14,7 @@ object RedisMacros  {
     val nameRep = show(name.tree)
     val nameRepTree = Literal(Constant(nameRep))
     val nameRepExpr = c.Expr[String](nameRepTree)
-    reify { nameRepExpr.splice.toString }
+    reify { nameRepExpr.splice.toString + UUID.randomUUID }
   }
 
 }

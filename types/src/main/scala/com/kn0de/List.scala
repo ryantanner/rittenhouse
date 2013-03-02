@@ -3,85 +3,72 @@ package com.kn0de
 import com.redis._
 import serialization._
 
-import scala.collection.mutable.{ Seq, GrowingBuilder, ListBuffer }
-import scala.collection.generic.{ SeqFactory, CanBuildFrom, Growable }
-import scala.collection.mutable.{ ArrayBuffer, Builder, BufferLike }
-
 import com.kn0de.redis.RedisMacros
 
-class List[A <: AnyVal](implicit parse: Parse[A]) extends BufferLike[A, List[A]]  {
+abstract class RedisData[A](val key: String)(implicit val parse: Parse[A]) {
 
-  private val _name = RedisMacros.keyName(this)
+}
 
-  def apply(idx: Int)(implicit client: RedisClient): A = client.lindex[A](_name, idx) match {
+class RedisList[A](key: String)(implicit parse: Parse[A]) extends RedisData[A](key)(parse) {
+
+  def apply(idx: Int)(implicit client: RedisClient): A = client.lindex[A](key, idx) match {
     case Some(elem) => elem
-    case None => throw new RedisKeyDoesNotExistException(_name, client.toString)
+    case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
   
   def update(idx: Int, elem: A)(implicit client: RedisClient): Boolean = 
-    client.lset(_name, idx, elem)
+    client.lset(key, idx, elem)
 
-  def iterator(implicit client: RedisClient): Iterator[A] = client.lrange[A](_name, 0, -1) match {
+  def iterator(implicit client: RedisClient): Iterator[A] = client.lrange[A](key, 0, -1) match {
     case Some(list) => list.flatten.iterator
-    case None => throw new RedisKeyDoesNotExistException(_name, client.toString)
+    case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-  def length(implicit client: RedisClient): Int = client.llen(_name) match {
+  def length(implicit client: RedisClient): Int = client.llen(key) match {
     case Some(len) => len.toInt
-    case None => throw new RedisKeyDoesNotExistException(_name, client.toString)
+    case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-  def +=(elem: A)(implicit client: RedisClient): List[A] = this.append(elem)(client)
+  def +=(elem: A)(implicit client: RedisClient): RedisList[A] = this.append(elem)(client)
 
-  def append(elem: A, elems: A*)(implicit client: RedisClient): List[A] = {
+  def append(elem: A, elems: A*)(implicit client: RedisClient): RedisList[A] = {
     val list = for {
-      len <- client.rpush(_name, elem, elems:_*)
-      list <- client.lrange[A](_name, 0, -1)
+      len <- client.rpush(key, elem, elems:_*)
+      list <- client.lrange[A](key, 0, -1)
     } yield list
     this
   }
 
-  def +=:(elem: A)(implicit client: RedisClient): List[A] = this.prepend(elem)(client)
+  def +=:(elem: A)(implicit client: RedisClient): RedisList[A] = this.prepend(elem)(client)
 
-  def prepend(elem: A, elems: A*)(implicit client: RedisClient): List[A] = {
+  def prepend(elem: A, elems: A*)(implicit client: RedisClient): RedisList[A] = {
     val list = for {
-      len <- client.lpush(_name, elem, elems:_*)
-      list <- client.lrange[A](_name, 0, -1)
+      len <- client.lpush(key, elem, elems:_*)
+      list <- client.lrange[A](key, 0, -1)
     } yield list
     this
   }
 
   def insertAll(n: Int, elems: Traversable[A])(implicit client: RedisClient) = {
-    val newList = client.lrange[A](_name, 0, -1).map(list =>
+    val newList = client.lrange[A](key, 0, -1).map(list =>
       list.take(n) ++ elems ++ list.takeRight(list.length - n)
-    ).getOrElse(throw new RedisKeyDoesNotExistException(_name, client.toString))
+    ).getOrElse(throw new RedisKeyDoesNotExistException(key, client.toString))
 
-    client.del(_name)
+    client.del(key)
 
-    client.rpush(_name, newList.head, newList.tail:_*)
+    client.rpush(key, newList.head, newList.tail:_*)
   }
 
   def remove(n: Int)(implicit client: RedisClient): A = throw new UnsupportedOperationException
 
-  def clear(implicit client: RedisClient) = client.del(_name)
+  def clear(implicit client: RedisClient) = client.del(key)
 
-  def seq(implicit client: RedisClient): Seq[A] = client.lrange[A](_name, 0, -1) match {
+  def seq(implicit client: RedisClient): Seq[A] = client.lrange[A](key, 0, -1) match {
     case Some(list) => Seq.empty ++ list.flatten.toSeq 
-    case None => throw new RedisKeyDoesNotExistException(_name, client.toString)
+    case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-
 }
-
-/*
-object List extends SeqFactory[List]  {
-
-  implicit def canBuildFrom[A]: CanBuildFrom[Coll, A, List[A]] = ReusableCBF.asInstanceOf[GenericCanBuildFrom[A]]
-
-  def newBuilder[A]: Builder[A, List[A]] = new ArrayBuffer
-
-}
-*/
 
 case class RedisKeyDoesNotExistException(keyName: String, dbInfo: String) extends Exception   {
 

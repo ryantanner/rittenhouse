@@ -10,6 +10,10 @@ import serialization._
 class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) extends RedisKey[A](key)(parse, client)
                                                                                   with LinearSeq[A] {
 
+  /** Selects an element by its index in the immutable sequence.
+    *
+    * Uses [[http://redis.io/commands/lindex lindex]]
+    */
   def apply(idx: Int): A = {
     if(idx < this.length)
       client.lindex[A](key, idx) match {

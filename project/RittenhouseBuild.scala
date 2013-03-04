@@ -20,7 +20,6 @@ object RittenhouseBuild extends Build {
     settings = buildSettings
   ) aggregate(macros, types)
 
-  libraryDependencies += "net.debasishg" % "redisclient_2.10" % "2.9"
 
   lazy val macros: Project = Project(
     "macros",
@@ -33,7 +32,17 @@ object RittenhouseBuild extends Build {
     "types",
     file("types"),
     settings = buildSettings ++ Seq(
-      libraryDependencies += "net.debasishg" % "redisclient_2.10" % "2.9"
+      libraryDependencies ++= Seq(
+        "net.debasishg" % "redisclient_2.10" % "2.9",
+        "org.scalatest" % "scalatest_2.10" % "2.0.M5b" % "test"
+      ),
+      initialCommands in console := """
+        import com.redis._
+        import serialization.Parse.Implicits._
+        import rittenhouse.collections._
+        implicit val redisClient = new RedisClient
+        val testList = new RedisList[Int]("test-redis-list")
+      """
     )      
   ) dependsOn(macros)
 

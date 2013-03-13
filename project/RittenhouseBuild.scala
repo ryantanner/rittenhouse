@@ -33,6 +33,7 @@ object RittenhouseBuild extends Build {
     file("types"),
     settings = buildSettings ++ Seq(
       libraryDependencies ++= Seq(
+        "com.typesafe.akka" %% "akka-actor" % "2.1.1",
         "net.debasishg" % "redisclient_2.10" % "2.9",
         "org.scalatest" % "scalatest_2.10" % "2.0.M5b" % "test"
       ),
@@ -40,6 +41,13 @@ object RittenhouseBuild extends Build {
         import com.redis._
         import serialization.Parse.Implicits._
         import rittenhouse.collections._
+        import scala.util._
+        import scala.concurrent.ExecutionContext.Implicits.global
+        import scala.concurrent.Future
+        import akka.pattern._
+        import scala.concurrent.duration._
+        import akka.actor.ActorSystem
+        val system = ActorSystem("mySystem")
         implicit val redisClient = new RedisClient
         val testList = new RedisList[Int]("test-redis-list")
       """

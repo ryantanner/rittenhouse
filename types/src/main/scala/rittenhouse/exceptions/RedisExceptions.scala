@@ -11,3 +11,9 @@ case class RedisTypeDoesNotMatchException(keyName: String, expectedType: String,
   override def getMessage = s"Type of Redis key '$keyName' is $actualType, does not match expectation of $expectedType in database at $dbInfo"
 
 }
+
+case class RedisClientsNonMatchingException extends Exception {
+
+  override def getMessage = "All clients in a BLPOP operation must be the same"
+
+}

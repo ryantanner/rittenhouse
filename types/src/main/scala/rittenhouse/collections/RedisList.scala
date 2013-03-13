@@ -2,7 +2,15 @@ package rittenhouse.collections
 
 import rittenhouse.exceptions._
 
+import rittenhouse.Context
+
 import scala.collection.mutable.LinearSeq
+import scala.concurrent._
+import duration._
+
+import ExecutionContext.Implicits.global
+
+import akka.pattern.after
 
 import com.redis._
 import serialization._
@@ -85,6 +93,49 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
     this
   }
 
+  private def blpopImpl(duration: Duration): Future[A] = future {
+    client.blpop[String, A](duration.toSeconds.toInt, key).map(_._2).getOrElse(throw new RedisKeyDoesNotExistException(key, client.toString))
+  }
+
+  // Blocks indefinitely
+  def blpop: Future[A] = blpopImpl(0 millis)
+ 
+  // Takes a duration blocking from now() for given duration
+  def blpop(duration: FiniteDuration): Future[A] = Future firstCompletedOf Seq(this.blpopImpl(duration), after(duration, using = Context.system.scheduler)(
+    Future.failed(new IllegalStateException("BLPOP failed to receive value before timeout"))))
+
+  // Takes a deadline blocking until it is reached
+  def blpop(deadline: Deadline): Future[A] = blpop(deadline.time)
+
+
+  def ~(o: RedisList[A]): Set[RedisList[A]] = Set(this, o)
+
 }
 
+object RedisList {
 
+  def blpop[A](lists: Set[RedisList[A]]): Future[(RedisList[A], A)] = {
+    require(checkClients(lists.map(_.client)))
+    require(checkParsers(lists.map(_.parse)))
+    require(lists.nonEmpty)
+
+    val client = lists.head.client
+    implicit val parse: Parse[A] = lists.head.parse
+
+    future {
+      (for {
+        (key, value)  <- client.blpop[String, A](0, lists.head.key, lists.tail.map(_.key).toSeq:_*)
+        listOfKey     <- lists.find(_.key == key)
+      } yield (listOfKey, value)) getOrElse (throw new IllegalStateException("Could not BLPOP"))
+    } 
+  }
+
+  implicit class RedisListSetWrapper[A](set: Set[RedisList[A]]) {
+    def ~(o: RedisList[A]): Set[RedisList[A]] = set + o
+  }
+
+  private def checkClients(clients: Set[RedisClient]): Boolean = clients.forall(_ == clients.head)
+
+  private def checkParsers[A](parsers: Set[Parse[A]]): Boolean = parsers.forall(_ == parsers.head)
+
+}

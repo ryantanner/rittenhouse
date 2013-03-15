@@ -15,14 +15,14 @@ import akka.pattern.after
 import com.redis._
 import serialization._
 
-class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) extends RedisKey[A](key)(parse, client)
+class RedisList[A](key: String)(implicit parse: Parse[A]) extends RedisKey[A](key)(parse)
                                                                                   with LinearSeq[A] {
 
   /** Selects an element by its index in the immutable sequence.
     *
     * Uses [[http://redis.io/commands/lindex lindex]]
     */
-  def apply(idx: Int): A = {
+  def apply(idx: Int)(implicit client: RedisClient): A = {
     if(idx < this.length)
       client.lindex[A](key, idx) match {
         case Some(elem) => elem
@@ -32,24 +32,24 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
       throw new java.lang.IndexOutOfBoundsException(s"List: $key, Index: $idx, Length: ${this.length}")
   }
   
-  def update(idx: Int, elem: A) = 
+  def update(idx: Int, elem: A)(implicit client: RedisClient) = 
     client.lset(key, idx, elem)
 
-  override def iterator: Iterator[A] = client.lrange[A](key, 0, -1) match {
+  override def iterator(implicit client: RedisClient): Iterator[A] = client.lrange[A](key, 0, -1) match {
     case Some(list) => list.flatten.iterator
     case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-  def length: Int = client.llen(key) match {
+  def length(implicit client: RedisClient): Int = client.llen(key) match {
     case Some(len) => len.toInt
     case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-  override def isEmpty: Boolean = this.length == 0
+  override def isEmpty(implicit client: RedisClient): Boolean = this.length == 0
 
-  def +=(elem: A): RedisList[A] = this.append(elem)
+  def +=(elem: A)(implicit client: RedisClient): RedisList[A] = this.append(elem)
 
-  def append(elem: A, elems: A*): RedisList[A] = {
+  def append(elem: A, elems: A*)(implicit client: RedisClient): RedisList[A] = {
     val list = for {
       len <- client.rpush(key, elem, elems:_*)
       list <- client.lrange[A](key, 0, -1)
@@ -57,9 +57,9 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
     this
   }
  
-  def +=:(elem: A): RedisList[A] = this.prepend(elem)
+  def +=:(elem: A)(implicit client: RedisClient): RedisList[A] = this.prepend(elem)
 
-  def prepend(elem: A, elems: A*): RedisList[A] = {
+  def prepend(elem: A, elems: A*)(implicit client: RedisClient): RedisList[A] = {
     val list = for {
       len <- client.lpush(key, elem, elems:_*)
       list <- client.lrange[A](key, 0, -1)
@@ -67,7 +67,7 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
     this
   }
 
-  def insertAll(n: Int, elems: Traversable[A]) = {
+  def insertAll(n: Int, elems: Traversable[A])(implicit client: RedisClient) = {
     val newList = client.lrange[A](key, 0, -1).map(list =>
       list.take(n) ++ elems ++ list.takeRight(list.length - n)
     ).getOrElse(throw new RedisKeyDoesNotExistException(key, client.toString))
@@ -77,65 +77,63 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
     client.rpush(key, newList.head, newList.tail:_*)
   }
 
-  def remove(n: Int): A = throw new UnsupportedOperationException
+  def remove(n: Int)(implicit client: RedisClient): A = throw new UnsupportedOperationException
 
-  def clear = client.del(key)
+  def clear(implicit client: RedisClient) = client.del(key)
 
-  override def seq: LinearSeq[A] = client.lrange[A](key, 0, -1) match {
+  override def seq(implicit client: RedisClient): LinearSeq[A] = client.lrange[A](key, 0, -1) match {
     case Some(list) => LinearSeq.empty ++ list.flatten.toSeq 
     case None => throw new RedisKeyDoesNotExistException(key, client.toString)
   }
 
-  def :=(seq: LinearSeq[A]): RedisList[A] = {
+  def :=(seq: LinearSeq[A])(implicit client: RedisClient): RedisList[A] = {
     client.del(key)
     seq.foreach(client.rpush(key, _))
 
     this
   }
 
-  private def blpopImpl(duration: Duration): Future[A] = future {
+  private def blpopImpl(duration: Duration)(implicit client: RedisClient): Future[A] = future {
     client.blpop[String, A](duration.toSeconds.toInt, key).map(_._2).getOrElse(throw new RedisKeyDoesNotExistException(key, client.toString))
   }
 
   // Blocks indefinitely
-  def blpop: Future[A] = blpopImpl(0 millis)
+  def blpop(implicit client: RedisClient): Future[A] = blpopImpl(0 millis)
  
   // Takes a duration blocking from now() for given duration
-  def blpop(duration: FiniteDuration): Future[A] = Future firstCompletedOf Seq(this.blpopImpl(duration), after(duration, using = Context.system.scheduler)(
+  def blpop(duration: FiniteDuration)(implicit client: RedisClient): Future[A] = Future firstCompletedOf Seq(this.blpopImpl(duration), after(duration, using = Context.system.scheduler)(
     Future.failed(new IllegalStateException("BLPOP failed to receive value before timeout"))))
 
   // Takes a deadline blocking until it is reached
-  def blpop(deadline: Deadline): Future[A] = blpop(deadline.time)
+  def blpop(deadline: Deadline)(implicit client: RedisClient): Future[A] = blpop(deadline.time)
 
-
-  def ~(o: RedisList[A]): Set[RedisList[A]] = Set(this, o)
+  def ~(o: RedisList[A])(implicit client: RedisClient): Set[RedisList[A]] = Set(this, o)
 
 }
 
 object RedisList {
 
-  def blpop[A](lists: Set[RedisList[A]]): Future[(RedisList[A], A)] = {
-    require(checkClients(lists.map(_.client)))
-    require(checkParsers(lists.map(_.parse)))
-    require(lists.nonEmpty)
-
-    val client = lists.head.client
+  private def blpopImpl[A](timeout: Duration, lists: Set[RedisList[A]])(implicit client: RedisClient): Future[(RedisList[A], A)] = {
     implicit val parse: Parse[A] = lists.head.parse
 
     future {
       (for {
-        (key, value)  <- client.blpop[String, A](0, lists.head.key, lists.tail.map(_.key).toSeq:_*)
+        (key, value)  <- client.blpop[String, A](timeout.toSeconds.toInt, lists.head.key, lists.tail.map(_.key).toSeq:_*)
         listOfKey     <- lists.find(_.key == key)
       } yield (listOfKey, value)) getOrElse (throw new IllegalStateException("Could not BLPOP"))
     } 
   }
 
+  def blpop[A](lists: Set[RedisList[A]])(implicit client: RedisClient): Future[(RedisList[A], A)] = {
+    blpopImpl[A](0 seconds, lists)
+  }
+
+  def blpop[A](timeout: FiniteDuration)(lists: Set[RedisList[A]])(implicit client: RedisClient): Future[(RedisList[A], A)] = {
+    blpopImpl[A](timeout, lists)
+  }
+
   implicit class RedisListSetWrapper[A](set: Set[RedisList[A]]) {
     def ~(o: RedisList[A]): Set[RedisList[A]] = set + o
   }
-
-  private def checkClients(clients: Set[RedisClient]): Boolean = clients.forall(_ == clients.head)
-
-  private def checkParsers[A](parsers: Set[Parse[A]]): Boolean = parsers.forall(_ == parsers.head)
 
 }

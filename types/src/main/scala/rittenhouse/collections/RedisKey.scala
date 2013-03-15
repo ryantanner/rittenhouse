@@ -1,11 +1,13 @@
 package rittenhouse.collections
 
+import akka.actor._
+
 import rittenhouse.exceptions._
 
 import com.redis._
 import serialization._
 
-abstract class RedisKey[A](val key: String)(implicit val parse: Parse[A], implicit val client: RedisClient)   {
+abstract class RedisKey[A](val key: String)(implicit val parse: Parse[A], implicit val client: RedisClient) extends Actor   {
 
   /* Check that if key exists, type matches declared type */
   client.getType(key) match {

@@ -1,10 +1,18 @@
 package com.kn0de.test
 
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{ Success, Failure }
+
 import org.scalatest._
+import org.scalatest.concurrent._
+import org.scalatest.concurrent.AkkaFutures
+
 import com.redis._
 import com.redis.serialization._
 
-import com.kn0de._
+import rittenhouse.collections.RedisList
+import rittenhouse.exceptions._
  
 class ListSpec extends FunSpec 
                   with OneInstancePerTest 
@@ -24,21 +32,46 @@ class ListSpec extends FunSpec
 
   override def afterAll = { }
 
-  describe("A RedisList") {
+  describe("A RedisList") { 
     describe("when empty") {
       it("should have a length of 0") {
         assert(rList.length === 0)
       }
 
-      it("should produce IndexOutOfBoundsException on any apply") {
-        intercept[IndexOutOfBoundsException] {
-          rList(0)
+      it("should throw IndexOutOfBoundsException on any apply") {
+        intercept[RedisListIndexOutOfBoundsException] {
+          rList.apply(0)
+        }
+      }
+
+      it("should throw IndexOutOfBoundsException on any update") {
+        intercept[RedisKeyDoesNotExistException] {
+          rList.update(0, "can't do it")
         }
       }
 
       it("should produce an empty sequence") {
         assert(rList.seq.isEmpty)
       }
+
+      it("should produce an empty iterator") {
+        assert(rList.iterator.isEmpty)
+      }
+
+      it("should return true on isEmpty") {
+        assert(rList.isEmpty)
+      }
+
+      /*
+      current ScalaTest doens't seem to have been updated for 
+      the new Futures in Scala 2.10
+      it("should throw IllegalStateException on a blocking pop") {
+        intercept[IllegalStateException] {
+          val fut = rList.blpop(50 millis) 
+          fut.futureValue
+        }
+      }
+      */
     }
 
     it("should allow an element to be added to an empty list") {

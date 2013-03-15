@@ -17,3 +17,9 @@ case class RedisClientsNonMatchingException extends Exception {
   override def getMessage = "All clients in a BLPOP operation must be the same"
 
 }
+
+case class RedisListIndexOutOfBoundsException(key: String, index: Int, length: Int) extends IndexOutOfBoundsException {
+
+  override def getMessage = s"List: $key, Index: $index, Length: $length"
+
+}

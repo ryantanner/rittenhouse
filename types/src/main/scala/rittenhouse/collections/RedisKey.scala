@@ -7,9 +7,9 @@ import rittenhouse.exceptions._
 import com.redis._
 import serialization._
 
-abstract class RedisKey[A](val key: String)(implicit val parse: Parse[A], implicit val client: RedisClient) extends Actor   {
+abstract class RedisKey[A](val key: String)(implicit val parse: Parse[A], implicit val client: RedisClient){
 
-  /* Check that if key exists, type matches declared type */
+  /* Check that if key exists, type matches declared type  */
   client.getType(key) match {
     case Some("string") => if(this.getClass.getSimpleName != "RedisKey") throw new RedisTypeDoesNotMatchException(key, "string", this.getClass.getSimpleName, client.toString)
     case Some("list")   => if(this.getClass.getSimpleName != "RedisList") throw new RedisTypeDoesNotMatchException(key, "list", this.getClass.getSimpleName, client.toString)

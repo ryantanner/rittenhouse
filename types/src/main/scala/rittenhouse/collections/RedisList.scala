@@ -127,6 +127,26 @@ class RedisList[A](key: String)(implicit parse: Parse[A], client: RedisClient) e
     client.rpush(key, newList.head, newList.tail:_*)
   }
 
+  /** Returns the first element of this list
+    * 
+    * Uses {{{{lindex}}}}
+    */ 
+  def head: A = this.apply(0)
+
+  def tail: RedisList[A] = client.lrange[A](key, 1, -1) 
+
+  /** Pops the list
+    * 
+    * Uses {{{{lpop}}}}
+    */
+  def pop: A = client.lpop[A](key)
+
+  /** Pushes an element onto this list; simply calls this.prepend
+    * 
+    * Uses {{{{lpush}}}}
+    */
+  def prepend(elem: A): RedisList[A] = this.prepend(elem)
+
   /** This operation is unsupported as removing a key for a list
     * still in operation in the runtime would lead to unsafe
     * behavior
